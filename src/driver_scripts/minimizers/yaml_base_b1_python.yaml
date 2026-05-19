@@ -1,0 +1,41 @@
+# base yaml for pipeb1
+
+
+likelihood:
+  b1like:
+    dataset_file: /sdf/home/w/wlwu/data/pipeb1/sampler_io/run2/data/v1_sim0001.dataset
+    dataset_params:
+      maps_use: [CMB_B,Dust_B, LT_B] #[CMB_B, Dust_B, LT_B]
+      use_max: 9
+      use_min: 1
+    l_max: 999 
+    map_separator: x
+    speed: 90
+params:
+  Al_scale: 1.0
+  BBalphadust:
+    prior: {dist: uniform, max: 1, min: -3}
+    proposal: 1
+    ref: {dist: norm, loc: -0.4, scale: 1}
+  BBbetadust: 1.6
+  BBdust:
+    prior: {dist: uniform, max: 50, min: 0}
+    proposal: 4
+    ref: {dist: norm, loc: 4.3, scale: 3}
+  r:
+    prior: {dist: uniform, max: 0.1, min: -0.1}
+    proposal: 0.03
+    ref: {dist: norm, loc: 0.00, scale: 0.03}
+sampler:
+  minimize: {ignore_prior: false, max_evals: 1000000, method: bobyqa}
+#theory: 
+#  fix_lcdm: !!python/name:cobaya_theory_b1.fix_lcdm
+output: /sdf/home/w/wlwu/data/pipeb1/sampler_io/run2/outputs/test3
+
+
+#in compsep_code/src/b1like
+#fix_lcdm: cobaya_theory_b1.fix_lcdm  #in compsep_code/src/b1like
+#extra_args: 
+#     lmax_theory: 999 #bpwf lmax ell
+#output block for testing
+

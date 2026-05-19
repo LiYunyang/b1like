@@ -1,0 +1,33 @@
+# needed so that b1like initializes knowing what parameters the cobaya yaml likelihood block should have
+
+path: null
+dataset_file: null
+dataset_params:
+    maps_use: [ILC_B]
+    use_min: 1
+    use_max: 6
+map_separator: x
+l_max: 2700
+speed: 90
+
+params:
+  Al_scale: 1
+  # dust power at ell=80, nu=353 GHz [uK^2]
+  BBdust:
+    prior:
+      min: 0
+      max: 50
+    ref:
+      dist: norm
+      loc: 4.25
+      scale: 3
+    proposal: 4
+    latex: A_{B,\mathrm{dust}}
+  BBbetadust:
+    ref: 1.6
+    latex: \beta_{B,\mathrm{dust}}
+  BBalphadust:
+    ref: -0.4
+    latex: \alpha_{B,\mathrm{dust}}
+  BBTdust: 19.6
+
