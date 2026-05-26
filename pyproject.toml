@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "b1like"
+version = "0.1.0"
+description = "Cobaya likelihood package for BK component-separation bandpower likelihoods."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "KW, YL"}]
+dependencies = [
+  "cobaya",
+  "numpy",
+  "scipy",
+]
+
+[project.optional-dependencies]
+dev = [
+  "astropy",
+  "healpy",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+b1like = ["*.yaml", "*.npz"]
+

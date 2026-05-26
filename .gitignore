@@ -1,0 +1,31 @@
+# Python bytecode/cache files
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+
+# Python/tool cache files
+.coverage
+*.cover
+
+# Environment files
+.env
+*.env
+
+# macOS
+.DS_Store
+
+# JetBrains IDEs
+.idea/
+
+# Cobaya/generated artifact extensions
+*.dataset
+*.dat
+*.paramnames
+*.checkpoint
+*.progress
+*.minimum
+*.log
+
+# Explicit local workspace
+local/

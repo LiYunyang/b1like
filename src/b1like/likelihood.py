@@ -1,12 +1,10 @@
 
 import numpy as np
-import pickle as pk
 
 import warnings
 
-# Local
 from cobaya.likelihoods.base_classes import CMBlikes
-from cobaya.conventions import Const
+
 
 #use bicep_keck_2015 functions
 #from cobaya.likelihoods.bicep_keck_2015 import bicep_keck_2015 as bk15
@@ -14,9 +12,8 @@ from cobaya.conventions import Const
 #from camb.mathutils import threej_coupling
 import warnings
 
-Ghz_Kelvin = Const.h_J_s / Const.kB_J_K * 1e9
 
-class b1like(CMBlikes):
+class BKCompLike(CMBlikes):
 
     def get_requirements(self):
         req = super().get_requirements()

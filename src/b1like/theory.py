@@ -3,40 +3,21 @@
 from cobaya.theories.cosmo import BoltzmannBase
 from cobaya.typing import InfoDict
 
-import os, sys
+from importlib import resources
+import os
 import numpy as np
 
-def get_BKsim_spec(fname="/sdf/home/w/wlwu/repos/compsep_code/src/b1like/fixlcdm_spec.npz"):
+
+def get_BKsim_spec(fname):
     '''
     the lensing BB spec should match the spt-3g sims 
     use the BK generated tensor r=1 spec to scale for the tensor BB
 
     '''
-    liketheorydir="/sdf/home/w/wlwu/bk/"
-
-    if not os.path.isfile(fname):
-
-        import scipy.io as sio
-        # BK CAMB input for making BK sims
-        tmp = sio.loadmat(liketheorydir+"like_theory_bk14lt2894.mat")
-        camb = tmp['liketheory'][0]
-        r=camb['r'][0][0][0]
-
-        # ell starts at 1 (lmax=600); in Dl [uK^2]
-        dltens = np.concatenate([[1e-10], camb['tensor'][0][:,2]/r]) #now starts at ell=0
-
-        #SPT camb; in Dl, starts at ell=2
-        tmp1 = "/sdf/home/w/wlwu/repos/spt3g_software/simulations/data/camb/planck18_TTEEEE_lowl_lowE_lensing_highacc/planck2018_base_plikHM_TTTEEE_lowl_lowE_lensing_lensedCls.dat"
-        ell,sltt,slee,slbb,slte=np.loadtxt(tmp1,unpack=True)
-
-        dlbb = np.concatenate([slbb[0:2], slbb]) #now starts at ell=0
-
-        np.savez(fname, cmbt=dltens, cmbl=dlbb)
-
     return np.load(fname)  #tmp['cmbt'] gives r=1 bb spec; tmp['cmbl'] gives lensing bb spec
 
 
-class fix_lcdm(BoltzmannBase):
+class FixedLCDM(BoltzmannBase):
     """
     class with fixed lensing BB spectrum and r=0.1(?) spectrum
     that can be scaled with Al_scale and r parameters.
@@ -45,7 +26,7 @@ class fix_lcdm(BoltzmannBase):
     (the llcdm spec should match with what's input to spt-3G)
 
     """
-    fixlcdm_fname="/sdf/home/w/wlwu/repos/compsep_code/src/b1like/fixlcdm_spec.npz"
+    fixlcdm_fname = None
     
     extra_args: InfoDict = { }
 
@@ -54,7 +35,15 @@ class fix_lcdm(BoltzmannBase):
 
         #have all objects, when relevant, start at ell=1 (bpwf, theory spec) 
 
-        spec = get_BKsim_spec(self.fixlcdm_fname)
+        if self.fixlcdm_fname is None:
+            spec_path = resources.files("b1like").joinpath("fixlcdm_spec.npz")
+        else:
+            spec_path = self.fixlcdm_fname
+
+        if not os.path.isfile(spec_path):
+            raise FileNotFoundError(f"Fixed LCDM spectrum file not found: {spec_path}")
+
+        spec = get_BKsim_spec(spec_path)
         tens_bb = spec['cmbt']
         lens_bb = spec['cmbl']
 

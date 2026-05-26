@@ -1,0 +1,7 @@
+# Cobaya component defaults for b1like.theory.FixedLCDM.
+#
+# This file is component metadata only. Do not put local paths, run names,
+# generated filenames, or machine-specific configuration here.
+
+fixlcdm_fname: null
+extra_args: {}
