@@ -42,7 +42,6 @@ b1like/
 │       ├── likelihood.py
 │       ├── theory.py
 │       ├── BKCompLike.yaml
-│       ├── FixedLCDM.yaml
 │       ├── fixlcdm_spec.npz
 │       └── dev/
 │           ├── __init__.py
@@ -64,10 +63,11 @@ The public Cobaya-facing components are:
 - `b1like.likelihood.BKCompLike`: the likelihood class.
 - `b1like.theory.FixedLCDM`: the fixed-spectrum theory provider.
 
-The files `BKCompLike.yaml` and `FixedLCDM.yaml` are Cobaya component-default
-files. They may define component defaults, parameter metadata, labels, priors,
-and proposal widths. They must not contain local paths, run names, selected map
-sets, generated dataset filenames, or machine-specific configuration.
+`BKCompLike.yaml` is a Cobaya component-default file. It may define component
+defaults, parameter metadata, labels, priors, and proposal widths. It must not
+contain local paths, run names, selected map sets, generated dataset filenames,
+or machine-specific configuration. `FixedLCDM` keeps its small set of defaults
+in Python.
 
 Private implementation helpers should use a leading underscore if they are added
 later. Public users should not import from underscore-prefixed modules directly.
