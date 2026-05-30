@@ -1,21 +1,10 @@
 # follow example in /sdf/home/w/wlwu/repos/2025/202503_cosmopower/cobaya_theory_cpj.py
 
 from cobaya.theories.cosmo import BoltzmannBase
-from cobaya.typing import InfoDict
 
 from importlib import resources
 import os
 import numpy as np
-
-
-def get_BKsim_spec(fname):
-    """
-    Load the BK simulation spectra.
-
-    The lensing BB spectrum should match the SPT-3G simulations. The
-    BK-generated tensor ``r=1`` spectrum is used for tensor BB scaling.
-    """
-    return np.load(fname)  # tmp['cmbt'] gives r=1 bb spec; tmp['cmbl'] gives lensing bb spec
 
 
 class FixedLCDM(BoltzmannBase):
@@ -28,9 +17,20 @@ class FixedLCDM(BoltzmannBase):
 
     """
 
-    fixlcdm_fname = None
+    fixlcdm_fname: str | None = None
+    lmax_theory: int = 600
 
-    extra_args: InfoDict = {}
+    # BoltzmannBase expects this attribute during initialize(); FixedLCDM uses
+    # explicit class options instead.
+    extra_args: dict = {}
+
+    r_parname = "r"
+    Al_parname = "Al_scale"
+
+    tens_bb: np.ndarray
+    lens_bb: np.ndarray
+    ells: np.ndarray
+    invfac: np.ndarray
 
     def initialize(self):
         super().initialize()
@@ -45,21 +45,18 @@ class FixedLCDM(BoltzmannBase):
         if not os.path.isfile(spec_path):
             raise FileNotFoundError(f"Fixed LCDM spectrum file not found: {spec_path}")
 
-        spec = get_BKsim_spec(spec_path)
+        spec = np.load(spec_path)  # tmp['cmbt'] gives r=1 bb spec; tmp['cmbl'] gives lensing bb spec
         tens_bb = spec['cmbt']
         lens_bb = spec['cmbl']
+        tens_bb = np.concatenate([tens_bb, np.zeros(max(0, self.lmax_theory - len(tens_bb) + 1))])
 
-        self.lmax_theory = 999  # self.extra_args.get("lmax_theory", 999)
+        self.lmax_theory = int(self.lmax_theory)
 
-        self.tens_bb = np.concatenate([tens_bb, np.zeros(self.lmax_theory - len(tens_bb) + 1)])
+        self.tens_bb = tens_bb[: self.lmax_theory + 1]
         self.lens_bb = lens_bb[: self.lmax_theory + 1]
 
-        self.r_parname = "r"
-        self.Al_parname = "Al_scale"
-
-        ells = np.arange(0, self.lmax_theory + 1)
-        ells[0] = 1  # avoid divide by zero
-        self.ells = ells
+        self.ells = np.arange(self.lmax_theory + 1)
+        self.invfac = 2 * np.pi / (np.maximum(self.ells, 1) * (np.maximum(self.ells, 1) + 1))
 
     def initialize_with_provider(self, provider):
         """
@@ -83,38 +80,29 @@ class FixedLCDM(BoltzmannBase):
         """Return dictionary of parameters that must be provided."""
         return {self.r_parname: None, self.Al_parname: None}
 
-    def get_can_provide(self):
-        """Return list of quantities that can be provided."""
-        return ["Dl"]
-
     def calculate(self, state, want_derived=True, **params):
-        """Return total ``Cl``/``Dl`` and lensed-scalar ``Cl``/``Dl``."""
-        ellfac = self.ells * (self.ells + 1) / 2 / np.pi
-
-        state["Dl"] = {
-            "ell": self.ells,
-            "bb": state['params'][self.r_parname] * self.tens_bb
-            + state['params'][self.Al_parname] * self.lens_bb,
-        }
-
-        state["Cl"] = {"ell": self.ells, "bb": state["Dl"]["bb"] / ellfac}
-
-        state["Dl_lens"] = {"ell": self.ells, "bb": state['params'][self.Al_parname] * self.lens_bb}
-
-        state["Cl_lens"] = {"ell": self.ells, "bb": state["Dl_lens"]["bb"] / ellfac}
-
+        """Return lens and tensor spectra."""
+        dl_lens = self.lens_bb * state['params'][self.Al_parname]
+        dl_tens = self.tens_bb * state['params'][self.r_parname]
+        state["Dl_lensed_scalar"] = dict(ell=self.ells, bb=dl_lens)
+        state["Cl_lensed_scalar"] = dict(ell=self.ells, bb=dl_lens * self.invfac)
+        state["Dl_tensor"] = dict(ell=self.ells, bb=dl_tens)
+        state["Cl_tensor"] = dict(ell=self.ells, bb=dl_tens * self.invfac)
         return
 
-    def get_Cl(self, ell_factor=False, **kwargs):
-        """Return the total tensor-plus-lensed-scalar ``Cl`` values or ``Dl`` values."""
-        if ell_factor:
-            return self.current_state["Dl"].copy()
-        else:
-            return self.current_state["Cl"].copy()
+    def get_can_provide(self):
+        return ["Cl_lensed_scalar", "Cl_tensor"]
 
     def get_Cl_lensed_scalar(self, ell_factor=False, **kwargs):
         """Return the lensed-scalar ``Cl`` values or ``Dl`` values."""
         if ell_factor:
-            return self.current_state["Dl_lens"].copy()
+            return self.current_state["Dl_lensed_scalar"].copy()
         else:
-            return self.current_state["Cl_lens"].copy()
+            return self.current_state["Cl_lensed_scalar"].copy()
+
+    def get_Cl_tensor(self, ell_factor=False, **kwargs):
+        """Return the tensor-only ``Cl`` values or ``Dl`` values."""
+        if ell_factor:
+            return self.current_state["Dl_tensor"].copy()
+        else:
+            return self.current_state["Cl_tensor"].copy()
