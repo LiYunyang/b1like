@@ -1,21 +1,10 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from functools import cached_property
 import numpy as np
 
 from ..likelihood import BKCompLike
-from . import model
 from . import mutils
-
-DEFAULT_NUISANCE_PARAMS = [
-    ("BBdust", r"A_{B,\mathrm{dust}}"),
-    ("BBsync", r"A_{B,\mathrm{sync}}"),
-    ("BBalphadust", r"\alpha_{B,\mathrm{dust}}"),
-    ("BBalphasync", r"\alpha_{B,\mathrm{sync}}"),
-    ("BBbetasync", r"\beta_{B,\mathrm{sync}}"),
-    ("BBgammaddust", r"\Galla_{B,\delta\mathrm{dust}}"),
-    ("BBddust", r"A_{B,\delta\mathrm{dust}}"),
-]
 
 STANDARD_COMPONENT_NAMES = tuple(BKCompLike.__COMPONENTS__)
 
@@ -640,15 +629,13 @@ class CobayaWriter:
     cl_noise: np.ndarray | None = None
     cl_fiducial: np.ndarray | None = None
 
-    nuisance_params: list[tuple[str, str]] = field(default_factory=lambda: DEFAULT_NUISANCE_PARAMS.copy())
     like_approx: str = "HL"
     cl_lmin: int = 2
     cl_lmax: int | None = None
     cl_hat_includes_noise: bool = True
     cl_fiducial_includes_noise: bool = False
-    include_nuisance_params: bool = True
-    fpivot_dust: float = 353.0
-    fpivot_sync: float = 30.0
+    include_nuisance_params: bool = False
+    nuisance_params: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self):
         self.outdir = Path(self.outdir)
@@ -708,8 +695,7 @@ class CobayaWriter:
         self._write_cl_file(self.outdir / f"{stem}_fiducial.dat", self.cl_fiducial)
         self._write_covmat(self.outdir / f"{stem}_covmat.dat")
         self._write_windows(windows_dir, stem)
-        if self.include_nuisance_params:
-            self._write_paramnames(self.outdir / f"{stem}.paramnames")
+        self._write_paramnames(self.outdir / f"{stem}.paramnames")
 
     def write_data(self, cl_hat, stem, *, data_stem=None):
         assert cl_hat.shape == (self.nbins, self.n_spec), (
@@ -717,8 +703,11 @@ class CobayaWriter:
         )
         self.outdir.mkdir(parents=True, exist_ok=True)
         data_stem = data_stem or stem
-        self._write_dataset(self.outdir / f"{data_stem}.dataset", stem, data_stem)
-        self._write_cl_file(self.outdir / f"{data_stem}_cl_hat.dat", cl_hat)
+        dataset_file = self.outdir / f"{data_stem}.dataset"
+        cl_hat_file = self.outdir / f"{data_stem}_cl_hat.dat"
+        self._write_dataset(dataset_file, stem, data_stem)
+        self._write_cl_file(cl_hat_file, cl_hat)
+        return str(dataset_file), str(cl_hat_file)
 
     def _write_dataset(self, path, stem, data_stem):
         with path.open("wt", encoding="utf-8") as f:
@@ -743,8 +732,6 @@ class CobayaWriter:
             f.write(f"bin_window_in_order = {self.bp_str}\n")
             if self.include_nuisance_params:
                 f.write(f"nuisance_params = {stem}.paramnames\n")
-            f.write(f"fpivot_dust = {self.fpivot_dust}\n")
-            f.write(f"fpivot_sync = {self.fpivot_sync}\n")
 
     def _write_cl_file(self, path, values):
         with path.open("wt", encoding="utf-8") as f:
@@ -767,6 +754,8 @@ class CobayaWriter:
                     f.write(f"{ell} " + " ".join(f"{x:0.6g}" for x in row) + "\n")
 
     def _write_paramnames(self, path):
+        if not self.include_nuisance_params:
+            return
         with path.open("wt", encoding="utf-8") as f:
             for name, label in self.nuisance_params:
                 f.write(f"{name:<18} {label}\n")
