@@ -3,30 +3,35 @@
 path: null
 dataset_file: null
 dataset_params:
-    maps_use: [ILC_B]
+    maps_use: [CMB_B, Dust_B, Sync_B, LT_B]
     use_min: 1
-    use_max: 6
+    use_max: 9
 map_separator: x
-l_max: 2700
+l_max: 600
 speed: 90
 
 params:
-  Al_scale: 1
-  # dust power at ell=80, nu=353 GHz [uK^2]
-  BBdust:
-    prior:
-      min: 0
-      max: 50
-    ref:
-      dist: norm
-      loc: 4.25
-      scale: 3
-    proposal: 4
-    latex: A_{B,\mathrm{dust}}
-  BBbetadust:
-    ref: 1.6
-    latex: \beta_{B,\mathrm{dust}}
-  BBalphadust:
-    ref: -0.4
-    latex: \alpha_{B,\mathrm{dust}}
-  BBTdust: 19.6
+    Al_scale:
+        value: 1
+        latex: A_L
+    r:
+        value: 0
+        latex: r
+    BBdust:
+        value: 4.3
+        latex: A_{B,\mathrm{dust}}
+    BBalphadust:
+        value: -0.4
+        latex: \alpha_{B,\mathrm{dust}}
+    BBsync:
+        value: 0.6
+        latex: A_{B,\mathrm{sync}}
+    BBalphasync:
+        value: -0.6
+        latex: \alpha_{B,\mathrm{sync}}
+    BBddust:
+        value: 0
+        latex: A_{B,\delta\mathrm{dust}}
+    BBgammaddust:
+        value: -3
+        latex: \Gamma_{B,\delta\mathrm{dust}}

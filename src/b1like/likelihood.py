@@ -1,177 +1,162 @@
-import numpy as np
-
 import warnings
-
+import numpy as np
 from cobaya.likelihoods.base_classes import CMBlikes
-
-
-# use bicep_keck_2015 functions
-# from cobaya.likelihoods.bicep_keck_2015 import bicep_keck_2015 as bk15
 
 # from camb.mathutils import threej_coupling
 
 
 class BKCompLike(CMBlikes):
-    def get_requirements(self):
-        req = super().get_requirements()
+    """
+    Component-map version of Cobaya's ``CMBlikes`` likelihood.
 
-        if self.llcdm_band is not None:
-            req["Cl_lensed_scalar"] = req["Cl"]
+    Map names must start with a standard component label, such as ``CMB_B``,
+    ``Dust_B``, ``Sync_B``, or ``LT_B``. Each map component is assigned a
+    pseudo-bandpass over theory components, and map-pair spectra are assembled
+    from the theory components they share.
+
+    Attributes
+    ----------
+    __COMPONENTS__: dict[str, dict[str, float]]
+        Map-component pseudo-bandpasses.
+    lpivot: int
+        Foreground power-law pivot.
+    """
+
+    __COMPONENTS__ = {
+        "CMB": {"lens": 1.0, "tensor": 1.0},
+        "Dust": {"dust": 1.0},
+        "Sync": {"sync": 1.0},
+        "LT": {"lens": 1.0},
+    }
+    lpivot = 80
+
+    @classmethod
+    def parse_map_component(cls, map_name):
+        """Return the standard component label encoded in a map name."""
+        component = map_name.strip().split("_", maxsplit=1)[0]
+        if component not in cls.__COMPONENTS__:
+            accepted = ", ".join(cls.__COMPONENTS__)
+            raise ValueError(f"Unknown map component {component!r}; expected one of {accepted}")
+        return component
+
+    def get_requirements(self):
+        """Translate parent ``Cl`` requirements into component theory requirements."""
+        req = super().get_requirements()
+        cl_requirement = req.pop("Cl", None)
+
+        if "lens" in getattr(self, "required_theory_components", ()):
+            req["Cl_lensed_scalar"] = cl_requirement
+        if "tensor" in getattr(self, "required_theory_components", ()):
+            req["Cl_tensor"] = cl_requirement
         return req
 
     def init_params(self, ini):
-        # same as bicep_keck_2015
+        """Initialize parent state and component bookkeeping."""
         super().init_params(ini)
 
-        # self.fpivot_dust = ini.float('fpivot_dust', 353.0) #not used
-        self.lpivot = 80
+        self.log.debug("pcl_lmin: %s", self.pcl_lmin)
+        self.log.debug("pcl_lmax: %s", self.pcl_lmax)
 
-        print('pcl_lmin: %i' % (self.pcl_lmin))
-        print('pcl_lmax: %i' % (self.pcl_lmax))
+        self.map_components = [self.parse_map_component(mapname) for mapname in self.map_names]
+        self.required_map_components = [self.map_components[i] for i in self.required_order]
+        self.required_theory_components = {
+            theory_component
+            for map_component in self.required_map_components
+            for theory_component in self.__COMPONENTS__[map_component]
+        }
+        for mapname, component in zip(self.map_names, self.map_components):
+            self.log.debug("mapname: %s", mapname)
 
-        self.llcdm_band = None
-        self.dust_band = None
-        self.sync_band = None
-        for i, mapname in enumerate(self.used_map_order):
-            # this works for as ILCxLT only;
-            assert "LT" not in self.used_map_order[0]
-            print(mapname)
-            if 'LT' in mapname:  # need to make sure it's not DustxLT
-                self.llcdm_band = i
-                print("adding llcdm_band")
-            if 'Dust' in mapname:
-                self.dust_band = i
-            if 'Sync' in mapname:
-                self.sync_band = i
-
-    def get_dust_spec(self, data_params):
-        """
-        Return the dust spectrum from ``pcl_lmin`` through ``pcl_lmax``.
-
-        The dust map is returned at 353 GHz for a delta-function bandpass.
-        """
-        Adust = data_params['BBdust']
-        alphadust = data_params['BBalphadust']
-
+    def get_powerlaw_Dl(self, amplitude, alpha):
+        """Return a foreground power-law spectrum in ``D_ell`` units."""
         ells = np.arange(self.pcl_lmax + 1)
         ells[0] = 1
-
         ratio = ells / self.lpivot
-        dustspec = Adust * ratio**alphadust
+        return amplitude * ratio**alpha
 
-        return dustspec
+    def get_lens_component_Dl(self, theory_cls, data_params, combination):
+        return theory_cls["lens"].get(combination)
 
-    def get_sync_spec(self, data_params):
-        """
-        Return the sync spectrum from ``pcl_lmin`` through ``pcl_lmax``.
+    def get_tensor_component_Dl(self, theory_cls, data_params, combination):
+        return theory_cls["tensor"].get(combination)
 
-        The sync map is returned at approximately 23 GHz for a delta-function
-        bandpass.
-        """
-        Async = data_params['BBsync']
-        alphasync = data_params['BBalphasync']
+    def get_dust_component_Dl(self, theory_cls, data_params, combination):
+        if combination != "bb":
+            return None
+        return self.get_powerlaw_Dl(data_params["BBdust"], data_params["BBalphadust"])
 
-        ells = np.arange(self.pcl_lmax + 1)
-        ells[0] = 1
+    def get_sync_component_Dl(self, theory_cls, data_params, combination):
+        if combination != "bb":
+            return None
+        return self.get_powerlaw_Dl(data_params["BBsync"], data_params["BBalphasync"])
 
-        ratio = ells / self.lpivot
-        syncspec = Async * ratio**alphasync
+    def get_theory_component_Dl(self, theory_component, theory_cls, data_params, combination):
+        """Dispatch to the spectrum rule for one theory component."""
+        try:
+            get_Dl = getattr(self, f"get_{theory_component}_component_Dl")
+        except AttributeError as exc:
+            raise NotImplementedError(
+                f"No theory spectrum rule implemented for component {theory_component!r}"
+            ) from exc
+        return get_Dl(theory_cls, data_params, combination)
 
-        return syncspec
+    def get_component_pair_Dl(self, component_i, component_j, theory_cls, data_params, combination):
+        """Return the weighted spectrum shared by two map components."""
+        bandpass_i = self.__COMPONENTS__[component_i]
+        bandpass_j = self.__COMPONENTS__[component_j]
+        cls = None
+        for theory_component in set(bandpass_i).intersection(bandpass_j):
+            dl = self.get_theory_component_Dl(theory_component, theory_cls, data_params, combination)
+            if dl is None:
+                continue
+            weighted_Dl = bandpass_i[theory_component] * bandpass_j[theory_component] * dl
+            cls = weighted_Dl if cls is None else cls + weighted_Dl
+        return cls
 
-    def get_theory_map_cls(self, Cls, data_params=None, lensed_scalar=None):
-        # print(data_params)
-        # print('aa:' , lensed_scalar)
-        # print('bb:' , self.llcdm_band)
-        if self.llcdm_band is not None:
-            assert lensed_scalar is not None
+    def get_theory_map_cls(self, theory_cls, data_params=None):
+        """Populate parent ``map_cls`` objects with component spectra."""
         for i in range(self.nmaps_required):
+            ci = self.required_map_components[i]
             for j in range(i + 1):
-                this_cl = Cls.copy()  # total Cls
+                cj = self.required_map_components[j]
                 CL = self.map_cls[i, j]
                 combination = "".join([self.field_names[k] for k in CL.theory_ij]).lower()
-                cls = this_cl.get(combination)
-                # DustxDust
-                if i == self.dust_band and j == self.dust_band:
-                    # print("getting dust spec")
-                    cls = self.get_dust_spec(data_params)
-                # SyncxSync
-                elif i == self.sync_band and j == self.sync_band:
-                    # print("getting sync spec")
-                    cls = self.get_dust_spec(data_params)
-                # Dust/SyncxCMB and Dust/SyncxLT
-                elif i == self.dust_band or j == self.dust_band or i == self.sync_band or j == self.sync_band:
-                    cls = None
-                # CMBxLT and LTxLT
-                elif i == self.llcdm_band or j == self.llcdm_band:
-                    # print("getting lensed scalar")
-                    this_cl = lensed_scalar.copy()
-                    cls = this_cl.get(combination)
+                cls = self.get_component_pair_Dl(ci, cj, theory_cls, data_params, combination)
 
                 if cls is not None:
                     tmp = cls[self.pcl_lmin : self.pcl_lmax + 1]
                     CL.CL[:] = tmp
                 else:
                     CL.CL[:] = 0
-        # import ipdb
-        # ipdb.set_trace()
-        # print(self.map_cls[1,1].CL)
         self.adapt_theory_for_maps(self.map_cls, data_params or {})
-        # add_foregrounds called in here; only add to CL.CL[0,0]
-        # which needs to be the ILC band
-        # print(self.map_cls[0,0].CL)
 
     def logp(self, **data_params):
-        # print("in logp")
-        cls = self.provider.get_Cl(ell_factor=True)
-        lensed_scalar_cls = None
-        if self.llcdm_band is not None:
-            # print("get lensed_scalar")
-            lensed_scalar_cls = self.provider.get_Cl_lensed_scalar(ell_factor=True)
-            # lensed_scalar_cls = self.provider.get_lensed_scal_Cl(ell_factor=True)
-            # scale the BB lensing spec
-            # Al = data_params["Al_scale"]
-            # lensed_scalar_cls['bb'] *= Al
-        return self.log_likelihood(cls, lensed_scalar=lensed_scalar_cls, **data_params)
+        """Return the log likelihood for the current sampled parameters."""
+        theory_cls = {}
+        if "lens" in self.required_theory_components:
+            theory_cls["lens"] = self.provider.get_Cl_lensed_scalar(ell_factor=True)
+        if "tensor" in self.required_theory_components:
+            theory_cls["tensor"] = self.provider.get_Cl_tensor(ell_factor=True)
+        return self.log_likelihood(theory_cls, **data_params)
 
-    def transform_alt(self, C, Chat, Cfhalf):
+    def log_likelihood(self, dls, **data_params):
         """
-        Transform model and data bandpower matrices.
+        Return the log likelihood for precomputed component spectra.
 
         Parameters
         ----------
-        C
-            Signal-plus-noise model expectation.
-        Chat
-            Data bandpowers.
-        Cfhalf
-            Matrix square root of ``C_fl``.
-        """
-        import scipy as sp
-
-        Cinvhalf = np.linalg.inv(sp.linalg.sqrtm(C))
-        diag, U = np.linalg.eigh(Cinvhalf @ Chat @ Cinvhalf)
-        assert 0
-
-    def log_likelihood(self, dls, lensed_scalar=None, **data_params):
-        r"""
-        Get the log likelihood from the input ``dls``.
-
-        ``dls`` contains CMB ``C_l`` values scaled by ``L * (L + 1) / (2*pi)``.
-
-        Parameters
-        ----------
-        dls
-            Dictionary of ``d_l`` values, such as ``'tt'``.
-        data_params
-            Likelihood nuisance parameters.
+        dls: dict
+            Theory spectra in ``D_ell`` units.
+        **data_params
+            Sampled or fixed likelihood parameters.
 
         Returns
         -------
         float
-            Log likelihood.
+            Log-likelihood value.
         """
-        self.get_theory_map_cls(dls, data_params, lensed_scalar=lensed_scalar)
+        return super().log_likelihood(dls, **data_params)
+        self.get_theory_map_cls(dls, data_params)
         C = np.empty((self.nmaps, self.nmaps))
         big_x = np.empty(self.nbins_used * self.ncl_used)
         vecp = np.empty(self.ncl)
@@ -201,10 +186,8 @@ class BKCompLike(CMBlikes):
                     with warnings.catch_warnings(record=True) as w:
                         warnings.simplefilter("always")
                         self.transform(C, self.bandpower_matrix[b], self.fiducial_sqrt_matrix[b])
-                        # import ipdb
-                        # ipdb.set_trace()
                         if len(w) > 0:
-                            if w[-1].category is RuntimeWarning:
+                            if issubclass(w[-1].category, RuntimeWarning):
                                 print("sqrt issue")
                                 return -np.inf
                 except np.linalg.LinAlgError:
