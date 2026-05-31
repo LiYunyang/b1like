@@ -4,7 +4,7 @@ from functools import cached_property
 import numpy as np
 
 from ..likelihood import BKCompLike
-from . import mutils
+
 
 STANDARD_COMPONENT_NAMES = tuple(BKCompLike.__COMPONENTS__)
 
@@ -63,14 +63,15 @@ class BPCM_B1:
         super().__init__(iscl=False)
 
     def get_rwf(self, finalrwf, nmaps):
-        mapping, rev_mapping, ori_pair2idx, tar_pair2idx, ori_idx2pair, tar_idx2pair = mutils.reorder_pairs(
-            nmaps
-        )
-        rwf = {}
-        for i in range(self.n_spec):
-            rwf[i] = finalrwf[0][mapping[i]][self.bins, self.bbidx]
-
-        return rwf
+        pass
+        # mapping, rev_mapping, ori_pair2idx, tar_pair2idx, ori_idx2pair, tar_idx2pair = mutils.reorder_pairs(
+        #     nmaps
+        # )
+        # rwf = {}
+        # for i in range(self.n_spec):
+        #     rwf[i] = finalrwf[0][mapping[i]][self.bins, self.bbidx]
+        #
+        # return rwf
 
     def form_bp(self):
         # aps dictionary
