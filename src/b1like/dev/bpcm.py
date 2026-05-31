@@ -317,14 +317,24 @@ class BPCM_B1:
 class BPCM:
     fields: list = ['B']
 
-    def __init__(self, specs, maporder: list, bpwf: np.ndarray, ncbands, scbands, loffdiag, bin_slice: None):
+    def __init__(
+        self,
+        specs,
+        maporder: list,
+        bpwf: np.ndarray,
+        ncbands,
+        scbands,
+        loffdiag,
+        bin_slice: slice = None,
+        rwf=None,
+    ):
         self.maporder = self.validate_maporder(maporder)
         self.specs = specs  # dict of arrays of shape (n_spec, nbins)
         assert np.ndim(bpwf) == 2
 
         if bin_slice is None:
             bin_slice = slice(None)
-        self.rwf = self.bpwf2rwf(bpwf, bin_slice)
+        self.rwf = rwf[bin_slice] if rwf is not None else self.bpwf2rwf(bpwf)[bin_slice]
         self.bpwf = self.rwf @ bpwf
         self.nbins = self.bpwf.shape[0]
         bp = self.specs2bp(specs, self.rwf)
@@ -334,7 +344,9 @@ class BPCM:
         assert self.cov.shape[0] == self.nbins * self.n_spec, f"{self.cov.shape}, {self.nbins}, {self.n_spec}"
 
     @classmethod
-    def from_file(cls, fname, maporder_mapping, bpwf, ncbands, scbands, bbidx=1, bin_slice=None, loffdiag=1):
+    def from_file(
+        cls, fname, maporder_mapping, bpwf, ncbands, scbands, bbidx=1, bin_slice=None, loffdiag=1, rwf=None
+    ):
         if bin_slice is None:
             bin_slice = slice(None)
         if isinstance(maporder_mapping, list):
@@ -354,6 +366,7 @@ class BPCM:
             ncbands=ncbands,
             scbands=scbands,
             loffdiag=loffdiag,
+            rwf=rwf,
         )
 
     def specs2bp(self, specs, rwf):
@@ -458,16 +471,20 @@ class BPCM:
         return out
 
     @staticmethod
-    def bpwf2rwf(bpwf, bin_slice=None) -> np.ndarray:
-        if bin_slice is None:
-            bin_slice = slice(None)
+    def bpwf2rwf(bpwf, bin_edges=None):
         assert bpwf.ndim == 2, f"Expected 2d bpwf array, got shape {bpwf.shape}"
-        # not applying bpwf debiasing
-        # rwf = np.diag(np.ones(bpwf.shape[0]))[bin_slice]
-        supfac = np.sum(bpwf, axis=1)
-        rwf = np.zeros_like(supfac)
-        rwf[supfac > 0] = 1 / supfac[supfac > 0]
-        rwf = np.diag(rwf)[bin_slice]
+        if bin_edges is None:
+            supfac = np.sum(bpwf, axis=1)
+            rwf = np.zeros_like(supfac)
+            rwf[supfac > 0] = 1 / supfac[supfac > 0]
+            rwf = np.diag(rwf)
+        else:
+            nbins = len(bin_edges) - 1
+            spec = np.zeros((nbins, bpwf.shape[1]))
+            for j, (b1, b2) in enumerate(zip(bin_edges[:-1], bin_edges[1:])):
+                spec[j, int(b1) : int(b2)] = 1
+            rwf = bpwf[:nbins] @ spec.T
+            rwf = np.linalg.inv(rwf)
         return rwf
 
     @staticmethod
