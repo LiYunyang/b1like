@@ -113,8 +113,9 @@ def get_product_spectra(cl, clw, lmax=None):
     -----
     For scalar random fields ``X`` and ``W`` with spectra ``C_l^X`` and
     ``C_l^W``, the product spectrum can be written as a Wigner-3j convolution.
-    This routine evaluates the same convolution through Wigner-d transforms,
-    which is typically faster for the use cases in this package.
+    This routine evaluates the same convolution in correlation-function space, which is significantly faster
+    and scales better with increasing ``lmax`` than the direct harmonic-space convolution. In existing
+    comparisons, results agree well to numerical precision.
 
     Parameters
     ----------
@@ -169,10 +170,7 @@ def get_product_spectra_camb(cl1, cl2, lmax=None):
 
     Notes
     -----
-    This routine requires ``camb`` at runtime. It is much slower than
-    :func:`get_product_spectra`. In existing comparisons, the TT, EE, and BB
-    auto terms agree well, while the EE-to-BB and BB-to-EE leakage terms can
-    differ at the few-percent level at low-ell.
+    This routine requires ``camb`` at runtime. It is much slower than :func:`get_product_spectra`.
 
     Parameters
     ----------
@@ -189,7 +187,7 @@ def get_product_spectra_camb(cl1, cl2, lmax=None):
     numpy.ndarray
         Product polarization spectra with shape ``(2, lmax + 1)``.
     """
-    from camb import threej_coupling
+    from camb.mathutils import threej_coupling
 
     lmax1 = cl1.shape[-1] - 1
     lmax2 = cl2.shape[-1] - 1
@@ -198,7 +196,9 @@ def get_product_spectra_camb(cl1, cl2, lmax=None):
     l1 = np.arange(lmax1 + 1)
     l2 = np.arange(lmax2 + 1)
     W = (2 * l2 + 1) * cl2 / 4 / np.pi
-    Ztt, _, Zee, Zeb = threej_coupling(W, lmax=cl2.shape[-1] - 1, pol=True)
+    Ztt, _, Zee, Zeb = threej_coupling(W, lmax=lmax2, pol=True)
+    # Symmetrization is needed because CAMB's EB coupling only fills the lower triangle.
+    Zeb = Zeb + Zeb.T - np.diag(np.diag(Zeb))
     clee = Zee @ ((2 * l1 + 1) * cl1[0]) + Zeb @ ((2 * l1 + 1) * cl1[1])
     clbb = Zeb @ ((2 * l1 + 1) * cl1[0]) + Zee @ ((2 * l1 + 1) * cl1[1])
     return np.array([clee, clbb])[:, : lmax + 1]
