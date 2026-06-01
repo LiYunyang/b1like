@@ -31,7 +31,7 @@ params:
         latex: \alpha_{B,\mathrm{sync}}
     BBddust:
         value: 0
-        latex: A_{B,\delta\mathrm{dust}}
+        latex: B_{B,\delta\mathrm{dust}}
     BBgammaddust:
         value: -3
         latex: \Gamma_{B,\delta\mathrm{dust}}

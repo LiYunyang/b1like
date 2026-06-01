@@ -2,8 +2,6 @@ import warnings
 import numpy as np
 from cobaya.likelihoods.base_classes import CMBlikes
 
-# from camb.mathutils import threej_coupling
-
 
 class BKCompLike(CMBlikes):
     """
@@ -27,8 +25,15 @@ class BKCompLike(CMBlikes):
         "Dust": {"dust": 1.0},
         "Sync": {"sync": 1.0},
         "LT": {"lens": 1.0},
+        "dDust": {"ddust": 1.0},
     }
     lpivot = 80
+    EB_ratio = 2
+
+    _ell_ratio: np.ndarray = None
+    _dl_fac: np.ndarray = None
+    _ddust_cache_key: tuple = None
+    _ddust_cache_value: np.ndarray = None
 
     @classmethod
     def parse_map_component(cls, map_name):
@@ -67,12 +72,14 @@ class BKCompLike(CMBlikes):
         for mapname, component in zip(self.map_names, self.map_components):
             self.log.debug("mapname: %s", mapname)
 
-    def get_powerlaw_Dl(self, amplitude, alpha):
-        """Return a foreground power-law spectrum in ``D_ell`` units."""
         ells = np.arange(self.pcl_lmax + 1)
         ells[0] = 1
-        ratio = ells / self.lpivot
-        return amplitude * ratio**alpha
+        self._ell_ratio = ells / self.lpivot
+        self._dl_fac = ells * (ells + 1) / (2 * np.pi)
+
+    def get_powerlaw(self, amplitude, alpha):
+        """Return a foreground power-law spectrum in ``D_ell`` units."""
+        return amplitude * self._ell_ratio**alpha
 
     def get_lens_component_Dl(self, theory_cls, data_params, combination):
         return theory_cls["lens"].get(combination)
@@ -83,12 +90,29 @@ class BKCompLike(CMBlikes):
     def get_dust_component_Dl(self, theory_cls, data_params, combination):
         if combination != "bb":
             return None
-        return self.get_powerlaw_Dl(data_params["BBdust"], data_params["BBalphadust"])
+        return self.get_powerlaw(data_params["BBdust"], data_params["BBalphadust"])
 
     def get_sync_component_Dl(self, theory_cls, data_params, combination):
         if combination != "bb":
             return None
-        return self.get_powerlaw_Dl(data_params["BBsync"], data_params["BBalphasync"])
+        return self.get_powerlaw(data_params["BBsync"], data_params["BBalphasync"])
+
+    def get_ddust_component_Dl(self, theory_cls, data_params, combination):
+        from .wignerd import get_product_spectra
+
+        if combination != "bb":
+            return None
+
+        shape_key = (data_params["BBalphadust"], data_params["BBgammaddust"])
+        if shape_key != self._ddust_cache_key:
+            cl_cc = self.get_powerlaw(1, data_params["BBalphadust"]) / self._dl_fac
+            cl_dd = self.get_powerlaw(1, data_params["BBgammaddust"])
+            # assume a EE spectrum that is EB_ratiox higher, and compute moment spectra with pol.
+            cl = get_product_spectra(np.array([self.EB_ratio * cl_cc, cl_cc]), cl_dd, lmax=self.pcl_lmax)[1]
+            self._ddust_cache_value = cl * self._dl_fac
+            self._ddust_cache_key = shape_key
+
+        return data_params["BBdust"] * data_params["BBddust"] * self._ddust_cache_value
 
     def get_theory_component_Dl(self, theory_component, theory_cls, data_params, combination):
         """Dispatch to the spectrum rule for one theory component."""
