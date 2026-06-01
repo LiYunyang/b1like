@@ -11,6 +11,10 @@ Install the package in editable mode from the repository root:
 python -m pip install -e .
 ```
 
+The Wigner-d routines are built as a compiled extension during installation.
+The extension is compiled from the generated C wrapper and the Wigner C
+implementation, so Cython is not required for installation.
+
 For local data-preparation utilities that need optional dependencies:
 
 ```bash
@@ -36,32 +40,36 @@ b1like/
 ├── README.md
 ├── LICENSE
 ├── .gitignore
-├── src/
-│   └── b1like/
+├── setup.py
+├── b1like/
+│   ├── __init__.py
+│   ├── likelihood.py
+│   ├── theory.py
+│   ├── wignerd.py
+│   ├── BKCompLike.yaml
+│   ├── fixlcdm_spec.npz
+│   ├── c/
+│   │   ├── cwignerd.c
+│   │   ├── wignerd.c
+│   │   ├── wignerd.h
+│   │   └── wignerd.pyx
+│   └── dev/
 │       ├── __init__.py
-│       ├── likelihood.py
-│       ├── theory.py
-│       ├── BKCompLike.yaml
-│       ├── fixlcdm_spec.npz
-│       └── dev/
-│           ├── __init__.py
-│           ├── bpcm.py
-│           ├── model.py
-│           ├── write_outputs.py
-│           ├── lt.py
-│           └── example_cobaya.py
+│       └── bpcm.py
 └── scripts/
     └── ...
 ```
 
 ## Library Code
 
-Installable library code lives under `src/b1like`.
+Installable library code lives under `b1like`.
 
 The public Cobaya-facing components are:
 
 - `b1like.likelihood.BKCompLike`: the likelihood class.
 - `b1like.theory.FixedLCDM`: the fixed-spectrum theory provider.
+- `b1like.wignerd.GaussLegendreQuadrature`: high-performance Wigner-d quadrature.
+- `b1like.wignerd.get_product_spectra`: product-spectrum helper using the compiled Wigner-d backend.
 
 `BKCompLike.yaml` is a Cobaya component-default file. It may define component
 defaults, parameter metadata, labels, priors, and proposal widths. It must not

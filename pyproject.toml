@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "numpy>=1.23"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -22,10 +22,11 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["b1like*"]
 
 [tool.setuptools.package-data]
-b1like = ["*.yaml", "*.npz"]
+b1like = ["*.yaml", "*.npz", "c/*.c", "c/*.h"]
 
 [tool.ruff]
 line-length = 110
