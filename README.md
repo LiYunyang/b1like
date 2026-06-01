@@ -12,14 +12,9 @@ python -m pip install -e .
 ```
 
 The Wigner-d routines are built as a compiled extension during installation.
-The extension is compiled from the generated C wrapper and the Wigner C
-implementation, so Cython is not required for installation.
+The extension is compiled from the Cython-generated C wrapper and the Wigner C
+implementation. This routine is only used for moment-expansion foreground models.
 
-For local data-preparation utilities that need optional dependencies:
-
-```bash
-python -m pip install -e ".[dev]"
-```
 
 After installation, Cobaya can import the public components as:
 
@@ -51,8 +46,7 @@ b1like/
 │   ├── c/
 │   │   ├── cwignerd.c
 │   │   ├── wignerd.c
-│   │   ├── wignerd.h
-│   │   └── wignerd.pyx
+│   │   └── wignerd.h
 │   └── dev/
 │       ├── __init__.py
 │       └── bpcm.py
@@ -66,56 +60,52 @@ Installable library code lives under `b1like`.
 
 The public Cobaya-facing components are:
 
-- `b1like.likelihood.BKCompLike`: the likelihood class.
-- `b1like.theory.FixedLCDM`: the fixed-spectrum theory provider.
-- `b1like.wignerd.GaussLegendreQuadrature`: high-performance Wigner-d quadrature.
-- `b1like.wignerd.get_product_spectra`: product-spectrum helper using the compiled Wigner-d backend.
+- `b1like.likelihood`: the likelihood classes.
+- `b1like.theory`: the fixed-spectrum theory provider.
+- `b1like.wignerd`: high-performance Wigner-d quadrature.
 
-`BKCompLike.yaml` is a Cobaya component-default file. It may define component
-defaults, parameter metadata, labels, priors, and proposal widths. It must not
-contain local paths, run names, selected map sets, generated dataset filenames,
-or machine-specific configuration. `FixedLCDM` keeps its small set of defaults
-in Python.
+`BKCompLike.yaml` is a Cobaya component-default file. It defines defaults of the
+`BKCompLike` likelihood. `FixedLCDM` keeps its small set of defaults in Python.
 
-Private implementation helpers should use a leading underscore if they are added
-later. Public users should not import from underscore-prefixed modules directly.
 
-Development and data-preparation utilities live under `src/b1like/dev`.
-These modules may support data IO, covariance construction, and Cobaya dataset writing. The public likelihood and
+Development and data-preparation utilities live under `b1like/dev`.
+These modules (`bpcm.py`) supports BPCM construction and Cobaya dataset writing. The public likelihood and
 theory classes should not depend on `dev`.
 
-## Scripts
+## Development
 
-The top-level `scripts/` directory is for local run orchestration and debugging.
-It may contain script templates and non-secret configuration templates, but it
-should not contain generated data products or Cobaya outputs.
+This repository is intended to be a library of likelihood and theory
+components, not a collection of user-specific runs. Keep committed changes
+focused on reusable package code, public defaults, tests, documentation, and
+small reference data that are required for the installed package to work.
 
-Examples of script responsibilities:
+Do not commit generated data products, Cobaya sampler outputs, user-specific
+configuration files, machine-local paths, private run YAMLs, or scratch scripts.
+Local analysis state should live outside the repository or under `local/`, which
+is ignored by git.
 
-- generate Cobaya `.dataset` inputs from external bandpower products
-- generate Cobaya run YAMLs
-- inspect covariance matrices and bandpower windows
-- translate local run configs into calls to `b1like.dev`
+Development and data-preparation utilities may live under `b1like/dev` when
+they provide reusable support code for building likelihood inputs. Public
+likelihood and theory components should not depend on `b1like.dev`.
 
-Run-specific configuration belongs in `scripts/configs/`. Machine-local config
-files should use a `.local.yaml` suffix and should not be committed.
+The top-level `scripts/` directory, if present, is for maintained examples,
+templates, and lightweight run orchestration. Scripts committed there should be
+portable, documented enough to reuse, and free of machine-specific paths or
+generated outputs.
 
-## Data and Output Locations
+### Code Style and Pre-commit
 
-Generated data and sampler outputs should not be written inside this repository.
-Use environment variables to point scripts to system-specific locations:
+Python code should follow the Ruff lint and format settings in `pyproject.toml`.
+Keep changes small, readable, and consistent with the surrounding module style.
+
+Before committing, install and run the configured pre-commit hooks:
 
 ```bash
-export B1LIKE_DATA_ROOT=/path/to/b1like/data
-export B1LIKE_OUTPUT_ROOT=/path/to/b1like/outputs
+python -m pip install pre-commit
+pre-commit install
+pre-commit run --all-files
 ```
 
-`B1LIKE_DATA_ROOT` is the root for external or generated data products, such as
-raw bandpower products, processed Cobaya data files, covariance matrices,
-bandpower windows, noise spectra, and fiducial spectra.
-
-`B1LIKE_OUTPUT_ROOT` is the root for Cobaya run products, such as generated run
-YAMLs, minimizer outputs, chains, logs, and diagnostic plots.
-
-This keeps the repository portable while allowing each system or user account to
-choose its own storage layout.
+The hooks check whitespace, YAML files, large added files, end-of-file newlines,
+and Ruff lint/format rules. If a hook rewrites files, review the diff and rerun
+the hooks before committing.
