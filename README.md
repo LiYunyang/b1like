@@ -16,6 +16,12 @@ The extension is compiled from the Cython-generated C wrapper and the Wigner C
 implementation. This routine is only used for moment-expansion foreground models.
 
 
+Run the Wigner-d product-spectrum consistency/benchmark tests with:
+
+```bash
+python -m pytest tests/test_wignerd.py
+```
+
 After installation, Cobaya can import the public components as:
 
 ```yaml

@@ -19,6 +19,8 @@ dependencies = [
 dev = [
   "astropy",
   "healpy",
+  "pytest",
+  "pytest-benchmark",
 ]
 
 [tool.setuptools.packages.find]
@@ -53,6 +55,12 @@ ignore = [
 [tool.ruff.format]
 quote-style = "preserve"
 skip-magic-trailing-comma = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "benchonly: benchmark-style tests that record timings without speed assertions",
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"

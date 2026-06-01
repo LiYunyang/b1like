@@ -12,7 +12,7 @@
 # Environment files
 .env
 *.env
-
+build/
 # macOS
 .DS_Store
 
