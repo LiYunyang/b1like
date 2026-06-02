@@ -4,7 +4,9 @@ from functools import cached_property
 import numpy as np
 
 from ..likelihood import BKCompLike
+from logging import getLogger
 
+logger = getLogger(__name__)
 
 STANDARD_COMPONENT_NAMES = tuple(BKCompLike.__COMPONENTS__)
 
@@ -327,6 +329,7 @@ class BPCM:
         loffdiag,
         bin_slice: slice = None,
         rwf=None,
+        debias_LT=True,
     ):
         self.maporder = self.validate_maporder(maporder)
         self.specs = specs  # dict of arrays of shape (n_spec, nbins)
@@ -337,7 +340,8 @@ class BPCM:
         self.rwf = rwf[bin_slice] if rwf is not None else self.bpwf2rwf(bpwf)[bin_slice]
         self.bpwf = self.rwf @ bpwf
         self.nbins = self.bpwf.shape[0]
-        bp = self.specs2bp(specs, self.rwf)
+        self.debias_LT = debias_LT
+        bp = self.specs2bp(specs, self.rwf, debias_LT=self.debias_LT)
         self.ncbands = ncbands
         self.scbands = scbands
         self.cov = self.bp2cov(bp, ncbands=ncbands, scbands=scbands, loffdiag=loffdiag, raw=False)
@@ -369,7 +373,7 @@ class BPCM:
             rwf=rwf,
         )
 
-    def specs2bp(self, specs, rwf):
+    def specs2bp(self, specs, rwf, debias_LT=True):
         """
         Convert the input spectra to bandpowers, applying the appropriate scaling.
 
@@ -380,6 +384,8 @@ class BPCM:
             shape (nsims, n_comp, n_comp, _nbins).
         rwf: np.ndarray
             Inverse window function as a 2d array of shape (nbins, _nbins)
+        debias_LT: bool
+            If True, apply a debiasing factor to the LT spectra.
 
         Returns
         -------
@@ -388,12 +394,26 @@ class BPCM:
             array of shape (nbins*n_spec, nsims).
         """
         bp = dict()
+        rwf_lt = 1
+        if debias_LT and 'LT' in self.maporder:
+            j_cmb = self.maporder.index('CMB')
+            j_lt = self.maporder.index('LT')
+            cl_cmb = np.mean(specs['ss'][:, j_cmb, j_cmb, :], axis=0)
+            cl_x = np.mean(specs['ss'][:, j_cmb, j_lt, :], axis=0)
+            rwf_lt = (rwf @ cl_cmb) / (rwf @ cl_x)
+            logger.info(f"Applying LT debiasing factor: {rwf_lt}")
 
         for key in ['ss', 'nn', 'sn', 'ns', 'tot']:
             nsims = specs[key].shape[0]
             bp[key] = np.zeros((self.n_spec * self.nbins, nsims))
             for k, o in self.order.items():
                 _spec = np.einsum('ij,lj->li', rwf, specs[key][:, o['e1'], o['e2'], :])
+                if debias_LT and 'LT' in self.maporder:
+                    if o['e1'] == self.maporder.index('LT'):
+                        _spec *= rwf_lt
+                    if o['e2'] == self.maporder.index('LT'):
+                        _spec *= rwf_lt
+
                 # assumed field is only B
                 bp[key][k + np.arange(self.nbins) * self.n_spec, :] = _spec.T
         return bp
@@ -454,7 +474,8 @@ class BPCM:
         return " ".join(bp_strs)
 
     def get_cl_noise(self):
-        out = np.mean(self.specs2bp(self.specs, self.rwf)['nn'], axis=-1).reshape(self.nbins, self.n_spec)
+        bp = self.specs2bp(self.specs, self.rwf, debias_LT=self.debias_LT)['nn']
+        out = np.mean(bp, axis=-1).reshape(self.nbins, self.n_spec)
         groups = self.cbands2groups(n_comp=self.n_comp, cbands=self.ncbands)
         for j, o in self.order.items():
             if groups[o['e1']] != groups[o['e2']]:
@@ -463,7 +484,8 @@ class BPCM:
 
     def get_cl_fiducial(self):
         """Fiducial signal Cls, without adding noise."""
-        out = np.mean(self.specs2bp(self.specs, self.rwf)['ss'], axis=-1).reshape(self.nbins, self.n_spec)
+        bp = self.specs2bp(self.specs, self.rwf, debias_LT=self.debias_LT)['ss']
+        out = np.mean(bp, axis=-1).reshape(self.nbins, self.n_spec)
         groups = self.cbands2groups(n_comp=self.n_comp, cbands=self.scbands)
         for j, o in self.order.items():
             if groups[o['e1']] != groups[o['e2']]:
