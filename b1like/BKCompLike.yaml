@@ -29,6 +29,9 @@ params:
     BBalphasync:
         value: -0.6
         latex: \alpha_{B,\mathrm{sync}}
+    epsilon:
+        value: 0
+        latex: \epsilon
     BBddust:
         value: 0
         latex: B_{B,\delta\mathrm{dust}}

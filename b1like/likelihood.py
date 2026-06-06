@@ -97,6 +97,14 @@ class BKCompLike(CMBlikes):
             return None
         return self.get_powerlaw(data_params["BBsync"], data_params["BBalphasync"])
 
+    def get_dustxsync_component_Dl(self, theory_cls, data_params, combination):
+        if combination != "bb":
+            return None
+        dust_Dl = self.get_dust_component_Dl(theory_cls, data_params, combination)
+        sync_Dl = self.get_sync_component_Dl(theory_cls, data_params, combination)
+        product_Dl = dust_Dl * sync_Dl
+        return data_params["epsilon"] * np.sign(product_Dl) * np.sqrt(np.abs(product_Dl))
+
     def get_ddust_component_Dl(self, theory_cls, data_params, combination):
         from .wignerd import get_product_spectra
 
@@ -114,27 +122,32 @@ class BKCompLike(CMBlikes):
 
         return data_params["BBdust"] * data_params["BBddust"] * self._ddust_cache_value
 
-    def get_theory_component_Dl(self, theory_component, theory_cls, data_params, combination):
-        """Dispatch to the spectrum rule for one theory component."""
-        try:
-            get_Dl = getattr(self, f"get_{theory_component}_component_Dl")
-        except AttributeError as exc:
-            raise NotImplementedError(
-                f"No theory spectrum rule implemented for component {theory_component!r}"
-            ) from exc
-        return get_Dl(theory_cls, data_params, combination)
+    def get_theory_component_Dl(self, theory_i, theory_j, theory_cls, data_params, combination):
+        """Dispatch to an auto- or cross-spectrum rule for latent theory fields."""
+        if theory_i == theory_j:
+            get_Dl = getattr(self, f"get_{theory_i}_component_Dl", None)
+            if get_Dl is None:
+                raise NotImplementedError(f"No theory spectrum rule implemented for component {theory_i!r}")
+            return get_Dl(theory_cls, data_params, combination)
+
+        for name in (f"{theory_i}x{theory_j}", f"{theory_j}x{theory_i}"):
+            get_Dl = getattr(self, f"get_{name}_component_Dl", None)
+            if get_Dl is not None:
+                return get_Dl(theory_cls, data_params, combination)
+        return None
 
     def get_component_pair_Dl(self, component_i, component_j, theory_cls, data_params, combination):
-        """Return the weighted spectrum shared by two map components."""
+        """Return the weighted spectrum between two map components."""
         bandpass_i = self.__COMPONENTS__[component_i]
         bandpass_j = self.__COMPONENTS__[component_j]
         cls = None
-        for theory_component in set(bandpass_i).intersection(bandpass_j):
-            dl = self.get_theory_component_Dl(theory_component, theory_cls, data_params, combination)
-            if dl is None:
-                continue
-            weighted_Dl = bandpass_i[theory_component] * bandpass_j[theory_component] * dl
-            cls = weighted_Dl if cls is None else cls + weighted_Dl
+        for theory_i, weight_i in bandpass_i.items():
+            for theory_j, weight_j in bandpass_j.items():
+                dl = self.get_theory_component_Dl(theory_i, theory_j, theory_cls, data_params, combination)
+                if dl is None:
+                    continue
+                weighted_Dl = weight_i * weight_j * dl
+                cls = weighted_Dl if cls is None else cls + weighted_Dl
         return cls
 
     def get_theory_map_cls(self, theory_cls, data_params=None):
@@ -179,7 +192,7 @@ class BKCompLike(CMBlikes):
         float
             Log-likelihood value.
         """
-        return super().log_likelihood(dls, **data_params)
+        # return super().log_likelihood(dls, **data_params)
         self.get_theory_map_cls(dls, data_params)
         C = np.empty((self.nmaps, self.nmaps))
         big_x = np.empty(self.nbins_used * self.ncl_used)
