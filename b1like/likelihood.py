@@ -77,6 +77,15 @@ class BKCompLike(CMBlikes):
         self._ell_ratio = ells / self.lpivot
         self._dl_fac = ells * (ells + 1) / (2 * np.pi)
 
+    @property
+    def binned_spectrum_headers(self):
+        """Return labels for columns produced by ``get_binned_map_cls``."""
+        return [
+            f"{map_i}{self.map_separator}{map_j}"
+            for i, map_i in enumerate(self.used_map_order)
+            for map_j in self.used_map_order[: i + 1]
+        ]
+
     def get_powerlaw(self, amplitude, alpha):
         """Return a foreground power-law spectrum in ``D_ell`` units."""
         return amplitude * self._ell_ratio**alpha
