@@ -351,8 +351,6 @@ class BPCM:
     def from_file(
         cls, fname, maporder_mapping, bpwf, ncbands, scbands, bbidx=1, bin_slice=None, loffdiag=1, rwf=None
     ):
-        if bin_slice is None:
-            bin_slice = slice(None)
         if isinstance(maporder_mapping, list):
             maporder_mapping = {_: _ for _ in maporder_mapping}
         maporder = list(maporder_mapping.keys())
