@@ -234,7 +234,7 @@ class BKCompLike(CMBlikes):
                         self.transform(C, self.bandpower_matrix[b], self.fiducial_sqrt_matrix[b])
                         if len(w) > 0:
                             if issubclass(w[-1].category, RuntimeWarning):
-                                print("sqrt issue")
+                                print(f"sqrt issue: bin-{b}")
                                 return -np.inf
                 except np.linalg.LinAlgError:
                     self.log.debug("Likelihood computation failed.")

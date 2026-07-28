@@ -330,7 +330,36 @@ class BPCM:
         bin_slice: slice = None,
         rwf=None,
         debias_LT=True,
+        betas=None,
     ):
+        """
+        Bandpower Covariance Matrix (BPCM) class for B1 likelihood.
+
+        Parameters
+        ----------
+        specs: dict
+            Dictionary of bandpowers with keys 'tot'/'ss'/'nn'/'sn'/'ns', each of shape (nsims, n_comp,
+            n_comp, nbins).
+        maporder: list
+            List of map names in the order they appear in the spectra.
+        bpwf: np.ndarray
+            Bandpower window function.
+        ncbands: list
+            List of lists specifying the correlated noise bands.
+        scbands: list
+            List of lists specifying the correlated signal bands.
+        loffdiag: int
+            Number of off-diagonal bins to include in the covariance matrix.
+        bin_slice: slice, optional
+            Slice object to select a subset of bins. If None, all bins are used.
+        rwf: np.ndarray, optional
+            Response window function. If None, it will be computed from the bandpower window function.
+        debias_LT: bool, optional
+            Whether to apply a debiasing factor to the LT spectra. Default is True.
+        betas: np.ndarray, optional
+            Array of beta values assumed in component separation. Shape (n_param, nsims). The order of the
+            parameters are not important.
+        """
         self.maporder = self.validate_maporder(maporder)
         self.specs = specs  # dict of arrays of shape (n_spec, nbins)
         assert np.ndim(bpwf) == 2
@@ -344,12 +373,24 @@ class BPCM:
         bp = self.specs2bp(specs, self.rwf, debias_LT=self.debias_LT)
         self.ncbands = ncbands
         self.scbands = scbands
-        self.cov = self.bp2cov(bp, ncbands=ncbands, scbands=scbands, loffdiag=loffdiag, raw=False)
+        self.cov = self.bp2cov(
+            bp, ncbands=ncbands, scbands=scbands, loffdiag=loffdiag, raw=False, betas=betas
+        )
         assert self.cov.shape[0] == self.nbins * self.n_spec, f"{self.cov.shape}, {self.nbins}, {self.n_spec}"
 
     @classmethod
     def from_file(
-        cls, fname, maporder_mapping, bpwf, ncbands, scbands, bbidx=1, bin_slice=None, loffdiag=1, rwf=None
+        cls,
+        fname,
+        maporder_mapping,
+        bpwf,
+        ncbands,
+        scbands,
+        bbidx=1,
+        bin_slice=None,
+        loffdiag=1,
+        rwf=None,
+        betas=None,
     ):
         if isinstance(maporder_mapping, list):
             maporder_mapping = {_: _ for _ in maporder_mapping}
@@ -369,6 +410,7 @@ class BPCM:
             scbands=scbands,
             loffdiag=loffdiag,
             rwf=rwf,
+            betas=betas,
         )
 
     def specs2bp(self, specs, rwf, debias_LT=True):
@@ -416,24 +458,87 @@ class BPCM:
                 bp[key][k + np.arange(self.nbins) * self.n_spec, :] = _spec.T
         return bp
 
-    def bp2cov(self, bp, ncbands, scbands, loffdiag=None, raw=False):
+    @staticmethod
+    def cov_expansion(dat, betas=None, mask=None):
+        """
+        Compute the covariance matrix of the data, optionally expanding it using the provided betas.
+
+        Parameters
+        ----------
+        dat : np.ndarray
+            Input data array of shape (ndim, n_samp).
+        betas : np.ndarray, optional
+            Array of beta values of shape (n_param, n_samp). If provided, the covariance will be expanded
+            using these betas and a low-rank covariance matrix will be separated.
+        mask : np.ndarray, optional
+            Boolean mask array of shape (ndim, ). True indicates that the corresponding dimension
+            should NOT be expanded. If None, all dimensions are expanded.
+        """
+        if betas is None:
+            cov_r = np.cov(dat, rowvar=True, ddof=1)
+            cov_J = None
+        else:
+            dbeta = np.atleast_2d(betas - np.mean(betas, axis=-1, keepdims=True))
+            assert dbeta.shape[1] == dat.shape[1], (
+                f"betas shape {betas.shape} does not match nn shape {dat.shape}"
+            )
+            norm = np.linalg.inv(np.einsum('ij,kj->ik', dbeta, dbeta))
+            x = dat - np.mean(dat, axis=1, keepdims=True)
+            if mask is not None:
+                x[mask] = 0
+            Ad = np.einsum('ik,jk->ij', dbeta, x)
+            J = np.einsum('ij,jk->ki', norm, Ad)
+            cov_beta = np.atleast_2d(np.cov(betas))
+            cov_J = np.einsum('ik,kl,jl', J, cov_beta, J)
+            cov_r = np.cov(dat - J @ dbeta, rowvar=True, ddof=1)
+        return cov_r, cov_J
+
+    def bp2cov(self, bp, ncbands, scbands, loffdiag=None, raw=False, betas=None, expand_all=False):
         snmask = self.construct_snmask(ncbands=ncbands, scbands=scbands, loffdiag=loffdiag)
         covmat = dict()
-        covmat['sig'] = np.cov(bp['ss'], rowvar=True, ddof=1)
-        covmat['noi'] = np.cov(bp['nn'], rowvar=True, ddof=1)
+        covmat_J = {k: None for k in ['noi', 'sn1', 'sn2', 'sn3', 'sn4', 'sig']}
+
+        LT1, LT2 = self.is_LT_idx()
+        LTauto = np.logical_and(LT1, LT2)
+
+        # ss exclude LT x LT auto.
+        covmat['sig'], covmat_J['sig'] = self.cov_expansion(
+            bp['ss'], betas=betas if expand_all else None, mask=LTauto
+        )
+        # nn exlcude LT x LT auto and any LT x N.
+        mask = np.logical_or(LT1, LT2)
+        covmat['noi'], covmat_J['noi'] = self.cov_expansion(bp['nn'], betas=betas, mask=mask)
 
         snns = np.concatenate((bp['sn'], bp['ns']), axis=0)
-        snnscov = np.cov(snns, rowvar=True, ddof=1)
+        mask = np.concatenate(
+            (
+                LT2,  # sn mask out any S x LT(n)
+                LT1,  # ns mask out any LT(n) x S
+            ),
+            axis=0,
+        )
+        snnscov, snnscovJ = self.cov_expansion(snns, betas=betas if expand_all else None, mask=mask)
+
         N = bp['ss'].shape[0]
         covmat['sn1'] = snnscov[0:N, 0:N]  # s_i n_j s_k n_l
         covmat['sn2'] = snnscov[0:N, N : 2 * N]  # s_i n_j n_k s_l
         covmat['sn3'] = snnscov[N : 2 * N, 0:N]  # n_i s_j s_k n_l
         covmat['sn4'] = snnscov[N : 2 * N, N : 2 * N]  # n_i s_j n_k s_l
 
+        if snnscovJ is not None:
+            covmat_J['sn1'] = snnscovJ[0:N, 0:N]
+            covmat_J['sn2'] = snnscovJ[0:N, N : 2 * N]
+            covmat_J['sn3'] = snnscovJ[N : 2 * N, 0:N]
+            covmat_J['sn4'] = snnscovJ[N : 2 * N, N : 2 * N]
+
         out = np.zeros_like(covmat['sig'])
         for key, _snmask in snmask.items():
             covmat[key] *= _snmask
+            if covmat_J[key] is not None:
+                covmat[key] += covmat_J[key]
+
             out += covmat[key]
+
         if raw:
             return covmat
         return out
@@ -452,6 +557,29 @@ class BPCM:
         # total number of all cross/auto spectra
         n = self.n_comp * self.n_fields
         return n * (n + 1) // 2
+
+    def is_LT_idx(self):
+        """Return two index indicating whether the first and second map in the cross-spectrum is LT."""
+        if 'LT' not in self.maporder:
+            idx = np.zeros(self.ndim, dtype=bool)
+            return idx, idx
+        j_lt = self.maporder.index('LT')
+        idx1 = np.tile(np.array([o['e1'] == j_lt for o in self.order.values()]), self.nbins)
+        idx2 = np.tile(np.array([o['e2'] == j_lt for o in self.order.values()]), self.nbins)
+        return idx1, idx2
+
+    def get_reorder_idx(self, bins=None):
+        """Return the index to reorder the bp/cov from bin-major to spec-major order."""
+        idx = np.arange(self.ndim).reshape(self.nbins, self.n_spec)
+        if bins is not None:
+            if isinstance(bins, tuple):
+                bins = list(bins)
+            idx = np.atleast_2d(idx[bins])
+        return idx.T.ravel()
+
+    @property
+    def ndim(self):
+        return self.nbins * self.n_spec
 
     @cached_property
     def order(self):
@@ -641,8 +769,10 @@ class BPCM:
             n_spec=self.n_spec, n_comp=self.n_comp, ncbands=ncbands, scbands=scbands, order=self.order
         )
         n_off = self.nbins if loffdiag is None else loffdiag
+        idx = np.arange(self.nbins)
         for key in ['sig', 'noi', 'sn1', 'sn2', 'sn3', 'sn4']:
             kernel = np.triu(np.tril(np.ones(self.nbins), k=n_off), k=-n_off)
+            # kernel = np.exp(-np.abs(idx[:, None] - idx[None, :]) / n_off)
             mask[key] = np.kron(kernel, mask[key])
         return mask
 
@@ -750,6 +880,7 @@ class CobayaWriter:
     def _write_dataset(self, path, stem, data_stem):
         with path.open("wt", encoding="utf-8") as f:
             f.write(f"like_approx = {self.like_approx}\n")
+
             f.write(f"map_names = {' '.join(self.map_names)}\n")
             f.write(f"map_fields = {' '.join(self.map_fields)}\n")
             f.write("binned = T\n")
