@@ -363,6 +363,7 @@ class BPCM:
         """
         self.maporder = self.validate_maporder(maporder)
         self.specs = specs  # dict of arrays of shape (n_spec, nbins)
+        self.nsims = specs['tot'].shape[0]
         assert np.ndim(bpwf) == 2
 
         if bin_slice is None:
@@ -891,6 +892,7 @@ class CobayaWriter:
             f.write(f"map_fields = {' '.join(self.map_fields)}\n")
             f.write("binned = T\n")
             f.write(f"nbins = {self.nbins}\n")
+            f.write(f"nsims = {self.bpcm.nsims}\n")
             f.write(f"cl_lmin = {self.cl_lmin}\n")
             f.write(f"cl_lmax = {self.cl_lmax}\n")
             f.write(f"cl_fiducial_file = {stem}_fiducial.dat\n")

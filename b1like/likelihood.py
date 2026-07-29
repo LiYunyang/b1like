@@ -30,6 +30,8 @@ class BKCompLike(CMBlikes):
     lpivot = 80
     EB_ratio = 2
 
+    nsims: int | None = None
+    SH_correction: bool
     _ell_ratio: np.ndarray = None
     _dl_fac: np.ndarray = None
     _ddust_cache_key: tuple = None
@@ -58,7 +60,10 @@ class BKCompLike(CMBlikes):
     def init_params(self, ini):
         """Initialize parent state and component bookkeeping."""
         super().init_params(ini)
-
+        self.SH_correction = bool(self.SH_correction)
+        self.nsims = ini.int("nsims", 0)
+        if self.SH_correction and self.nsims <= 1:
+            raise ValueError("SH_correction requires nsims > 1 in the dataset file")
         self.log.debug("pcl_lmin: %s", self.pcl_lmin)
         self.log.debug("pcl_lmax: %s", self.pcl_lmax)
 
@@ -185,7 +190,7 @@ class BKCompLike(CMBlikes):
             theory_cls["tensor"] = self.provider.get_Cl_tensor(ell_factor=True)
         return self.log_likelihood(theory_cls, **data_params)
 
-    def log_likelihood(self, dls, **data_params):
+    def log_likelihood(self, dls, **data_params):  # noqa: C901
         """
         Return the log likelihood for precomputed component spectra.
 
@@ -245,4 +250,9 @@ class BKCompLike(CMBlikes):
             big_x[b * self.ncl_used : (b + 1) * self.ncl_used] = vecp[self.cl_used_index]
         if self.like_approx == 'exact':
             return -0.5 * chisq
-        return -0.5 * self._fast_chi_squared(self.covinv, big_x)
+        chisq = self._fast_chi_squared(self.covinv, big_x)
+        if self.SH_correction:
+            L = -(self.nsims / 2) * np.log1p(chisq / (self.nsims - 1))
+        else:
+            L = -0.5 * chisq
+        return L
