@@ -331,6 +331,7 @@ class BPCM:
         rwf=None,
         debias_LT=True,
         betas=None,
+        full_cov=False,
     ):
         """
         Bandpower Covariance Matrix (BPCM) class for B1 likelihood.
@@ -374,7 +375,7 @@ class BPCM:
         self.ncbands = ncbands
         self.scbands = scbands
         self.cov = self.bp2cov(
-            bp, ncbands=ncbands, scbands=scbands, loffdiag=loffdiag, raw=False, betas=betas
+            bp, ncbands=ncbands, scbands=scbands, loffdiag=loffdiag, raw=False, betas=betas, full_cov=full_cov
         )
         assert self.cov.shape[0] == self.nbins * self.n_spec, f"{self.cov.shape}, {self.nbins}, {self.n_spec}"
 
@@ -391,6 +392,7 @@ class BPCM:
         loffdiag=1,
         rwf=None,
         betas=None,
+        full_cov=False,
     ):
         if isinstance(maporder_mapping, list):
             maporder_mapping = {_: _ for _ in maporder_mapping}
@@ -411,6 +413,7 @@ class BPCM:
             loffdiag=loffdiag,
             rwf=rwf,
             betas=betas,
+            full_cov=full_cov,
         )
 
     def specs2bp(self, specs, rwf, debias_LT=True):
@@ -493,7 +496,7 @@ class BPCM:
             cov_r = np.cov(dat - J @ dbeta, rowvar=True, ddof=1)
         return cov_r, cov_J
 
-    def bp2cov(self, bp, ncbands, scbands, loffdiag=None, raw=False, betas=None, expand_all=False):
+    def bp2cov(self, bp, ncbands, scbands, loffdiag=None, raw=False, betas=None, full_cov=False):
         snmask = self.construct_snmask(ncbands=ncbands, scbands=scbands, loffdiag=loffdiag)
         covmat = dict()
         covmat_J = {k: None for k in ['noi', 'sn1', 'sn2', 'sn3', 'sn4', 'sig']}
@@ -501,10 +504,13 @@ class BPCM:
         LT1, LT2 = self.is_LT_idx()
         LTauto = np.logical_and(LT1, LT2)
 
+        if full_cov:
+            covmat_J_full = self.cov_expansion(bp['tot'], betas=betas, mask=LTauto)[1]
+        else:
+            covmat_J_full = None
+
         # ss exclude LT x LT auto.
-        covmat['sig'], covmat_J['sig'] = self.cov_expansion(
-            bp['ss'], betas=betas if expand_all else None, mask=LTauto
-        )
+        covmat['sig'], covmat_J['sig'] = self.cov_expansion(bp['ss'], betas=betas, mask=LTauto)
         # nn exlcude LT x LT auto and any LT x N.
         mask = np.logical_or(LT1, LT2)
         covmat['noi'], covmat_J['noi'] = self.cov_expansion(bp['nn'], betas=betas, mask=mask)
@@ -517,7 +523,7 @@ class BPCM:
             ),
             axis=0,
         )
-        snnscov, snnscovJ = self.cov_expansion(snns, betas=betas if expand_all else None, mask=mask)
+        snnscov, snnscovJ = self.cov_expansion(snns, betas=betas, mask=mask)
 
         N = bp['ss'].shape[0]
         covmat['sn1'] = snnscov[0:N, 0:N]  # s_i n_j s_k n_l
@@ -534,11 +540,11 @@ class BPCM:
         out = np.zeros_like(covmat['sig'])
         for key, _snmask in snmask.items():
             covmat[key] *= _snmask
-            if covmat_J[key] is not None:
+            if not full_cov and covmat_J[key] is not None:
                 covmat[key] += covmat_J[key]
-
             out += covmat[key]
-
+        if full_cov:
+            out += covmat_J_full
         if raw:
             return covmat
         return out
